@@ -10,7 +10,7 @@ Official PyTorch implementation of **OTCHA: Optimal Transport-driven Confidence-
 **Conference:** *MICCAI*
 
 <p align="center">
-  <img src="./assets/otcha_overview.png" alt="OTCHA Overview" width="85%">
+  <img src="./figures/otcha_overview.png" alt="OTCHA Overview" width="85%">
 </p>
 <p align="center">
   <b>Figure 1.</b> Overview of the proposed OTCHA framework.
