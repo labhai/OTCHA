@@ -1,0 +1,46 @@
+# Private datasets, images, annotations, and experiment artifacts
+/data/
+/dataset_cache/
+/result/
+/results/
+/outputs/
+/checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.dcm
+*.dicom
+*.zip
+*.tar
+*.tar.gz
+*.log
+
+# Credentials and local configuration
+.env
+.env.*
+.netrc
+*.pem
+*.key
+credentials*.json
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store

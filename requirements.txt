@@ -1,0 +1,11 @@
+# Validated versions. Install a compatible PyTorch build for your hardware.
+torch==2.8.0
+torchvision==0.23.0
+timm==1.0.9
+einops==0.8.0
+numpy==1.26.4
+pandas==2.2.2
+Pillow==11.3.0
+opencv-python-headless==4.10.0.84
+scikit-learn==1.5.1
+tqdm>=4.66,<5

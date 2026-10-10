@@ -1,0 +1,5 @@
+{
+  "train": ["exampletrain_1"],
+  "val": ["examplevalidation_1"],
+  "test": ["exampletest_1"]
+}

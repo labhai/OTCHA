@@ -1,0 +1,5 @@
+{
+  "train": ["example-train-study"],
+  "val": ["example-validation-study"],
+  "test": ["example-test-study"]
+}

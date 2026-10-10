@@ -1,0 +1,2 @@
+patient_id,study,part,images,target
+1,1,XR_WRIST,"['train/XR_WRIST/patient00001/study1_positive/image1.png', 'train/XR_WRIST/patient00001/study1_positive/image2.png']",1
