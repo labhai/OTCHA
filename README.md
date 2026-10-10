@@ -150,12 +150,15 @@ excluded from Git by `.gitignore`.
 If you use OTCHA in your research, please cite:
 
 ```bibtex
-@inproceedings{yang2026otcha,
-  title     = {{OTCHA}: Optimal Transport-driven Confidence-aware Latent Hub Alignment for Multi-View Medical Image Classification},
-  author    = {Yang, Jiwoong and Chung, Haejun and Jang, Ikbeom},
-  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
-  year      = {2026},
-  url       = {https://papers.miccai.org/miccai-2026/paper/4914_paper.pdf}
+@InProceedings{yang2026otcha,
+        author = { Yang, Jiwoong and Chung, Haejun and Jang, Ikbeom},
+        title = { { OTCHA: Optimal Transport-Driven Confidence-Aware Latent Hub Alignment for Multi-view Medical Image Classification } },
+        booktitle = {Medical Image Computing and Computer Assisted Intervention -- MICCAI 2026},
+        year = {2026},
+        publisher = {Springer Nature Switzerland},
+        volume = {LNCS 16885},
+        month = {September},
+        page = {pending}
 }
 ```
 
