@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import argparse
 import time
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -23,7 +22,7 @@ from loss.otra_loss import OTRALoss
 from loss.chexpert_md_loss import MutualDistillationLoss
 
 # Utils
-from utils import save_results_csv, EarlyStopper, set_seed, set_optimizer, str2bool, create_scheduler
+from utils import EarlyStopper, set_seed, set_optimizer, str2bool, create_scheduler
 
 def parse_option():
     parser = argparse.ArgumentParser(description="OTCHA Training on CheXpert")
@@ -37,23 +36,20 @@ def parse_option():
     # Method & Model
     parser.add_argument("--method", type=str, default="OTCHA")
     parser.add_argument("--model_name", type=str, default="vit_small_r26_s32_224")
-    parser.add_argument("--pretrained_weights", type=str2bool, default=True)
+    parser.add_argument("--pretrained_weights", type=str2bool, default=True, help="initialize the backbone with ImageNet weights")
 
     # Fused OT (pos term)
     parser.add_argument("--num_latents", type=int, default=49)
-    parser.add_argument("--latent_refine_iters", type=int, default=1)
     parser.add_argument("--ot_pos_weight", type=float, default=0.2)
     parser.add_argument("--ot_pos_sigma", type=float, default=1.0)
 
     # OTCHA params
-    parser.add_argument("--sinkhorn_iters", type=int, default=5)
-    parser.add_argument("--sinkhorn_epsilon", type=float, default=0.1)
+    parser.add_argument("--sinkhorn_iters", type=int, default=20)
+    parser.add_argument("--sinkhorn_epsilon", type=float, default=0.2)
     parser.add_argument("--bin_score_init", type=float, default=0.0)
     parser.add_argument("--normalize_qk", type=str2bool, default=True)
     parser.add_argument("--refine_dropout", type=float, default=0.0)
-    parser.add_argument("--detach_transport", type=str2bool, default=False)
-    parser.add_argument("--return_transport_matrix", type=str2bool, default=True)
-    parser.add_argument("--num_otcha_stages", type=int, default=0)
+    parser.add_argument("--return_transport_matrix", type=str2bool, default=False)
 
     # Loss toggles
     parser.add_argument("--md_loss", type=str2bool, default=True)
@@ -64,17 +60,7 @@ def parse_option():
     parser.add_argument("--lambda_param", type=float, default=0.1)
 
     # OTRA hyperparameters
-    parser.add_argument("--otra_weight", type=float, default=0.1)
-    parser.add_argument("--otra_student_key", type=str, default="tokens_refined", choices=["tokens", "tokens_refined"])
-    parser.add_argument("--otra_weight_mode", type=str, default="gate_beta", choices=["gate_beta", "gate_beta_confv", "confv_beta", "gate", "beta", "uniform"])
-    parser.add_argument("--otra_detach_teacher", type=str2bool, default=True)
-    parser.add_argument("--otra_detach_weights", type=str2bool, default=True)
-    parser.add_argument("--otra_feature_norm", type=str, default="layernorm+l2", choices=["layernorm+l2", "l2", "none"])
-    parser.add_argument("--otra_distance", type=str, default="cosine", choices=["cosine", "mse", "smooth_l1"])
-    parser.add_argument("--otra_debug_checks", type=str2bool, default=False)
-    parser.add_argument("--use_stage", type=str2bool, default=False)
-    parser.add_argument("--stage_start", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--stage_weight", type=float, default=1.0)
+    parser.add_argument("--otra_weight", type=float, default=0.3)
 
     # Data paths (CheXpert)
     parser.add_argument("--data_dir", type=str, default="data/CheXpert", help="CheXpert data directory")
@@ -85,10 +71,10 @@ def parse_option():
     parser.add_argument("--use_clahe", type=str2bool, default=False)
 
     # Training hyperparameters
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--patience", type=int, default=20)
     parser.add_argument("--grad_clip_norm", type=float, default=80.0)
 
     # AMP
@@ -101,10 +87,8 @@ def parse_option():
     parser.add_argument("--momentum", type=float, default=0.9)
 
     # Scheduler
-    parser.add_argument("--scheduler", type=str, default="plateau", choices=["none", "cosinewarmup", "cosine", "step", "plateau"])
-    parser.add_argument("--lr_min", type=float, default=1e-8)
-    parser.add_argument("--step_size", type=int, default=20)
-    parser.add_argument("--pl_patience", type=int, default=10)
+    parser.add_argument("--scheduler", type=str, default="cosine", choices=["none", "cosine"])
+    parser.add_argument("--lr_min", type=float, default=1e-6)
 
     opt = parser.parse_args()
     return opt
@@ -154,7 +138,7 @@ def set_model_and_losses(opt, device):
     model = OTCHA(
         opt=opt,
         model_name=opt.model_name,
-        num_classes=opt.num_classes,       # 14
+        num_classes=opt.num_classes,       # 13 labels
         n=opt.num_view,                    # 2 (frontal + lateral)
         pretrained_weights=opt.pretrained_weights,
         sinkhorn_iters=opt.sinkhorn_iters,
@@ -162,12 +146,10 @@ def set_model_and_losses(opt, device):
         bin_score_init=opt.bin_score_init,
         normalize_qk=opt.normalize_qk,
         refine_dropout=opt.refine_dropout,
-        detach_transport=opt.detach_transport,
         ot_pos_weight=opt.ot_pos_weight,
         ot_pos_sigma=opt.ot_pos_sigma,
         return_otcha_info=True,
         return_transport_matrix=opt.return_transport_matrix,
-        num_otcha_stages=opt.num_otcha_stages,
     ).to(device)
 
     # CheXpert: BCEWithLogitsLoss (multilabel)
@@ -180,18 +162,7 @@ def set_model_and_losses(opt, device):
 
     otra_loss_fn = None
     if opt.otra_loss:
-        otra_loss_fn = OTRALoss(
-            student_key=opt.otra_student_key,
-            weight_mode=opt.otra_weight_mode,
-            detach_teacher=opt.otra_detach_teacher,
-            detach_weights=opt.otra_detach_weights,
-            feature_norm=opt.otra_feature_norm,
-            distance=opt.otra_distance,
-            debug_checks=opt.otra_debug_checks,
-            use_otcha_stages=opt.use_stage,
-            stage_start=opt.stage_start,
-            stage_weight_decay=opt.stage_weight,
-        ).to(device)
+        otra_loss_fn = OTRALoss().to(device)
 
     return model, criterion, md_loss_fn, otra_loss_fn
 
@@ -212,15 +183,16 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
         f"{save_dir}/"
         f"{opt.model_name}_seed{opt.seed}_n{opt.num_view}_bs{opt.batch_size}_"
         f"{opt.optim}_lr{opt.lr}_"
-        f"stages{opt.num_otcha_stages}_eps{opt.sinkhorn_epsilon}_"
+        f"eps{opt.sinkhorn_epsilon}_"
         f"M{opt.num_latents}_bin{opt.bin_score_init}_posW{opt.ot_pos_weight}_posS{opt.ot_pos_sigma}_"
         f"md({opt.md_loss})_lam{opt.lambda_param}_"
-        f"otra({opt.otra_loss})_gamma{opt.otra_weight}_{opt.otra_weight_mode}_"
-        f"normqk({opt.normalize_qk})_detP({opt.detach_transport}).pth"
+        f"otra({opt.otra_loss})_gamma{opt.otra_weight}_"
+        f"normqk({opt.normalize_qk}).pth"
     )
 
     early_stopper = EarlyStopper(patience=opt.patience, use_loss_when_tie=True, save_path=save_path)
 
+    saved_this_run = False
     for epoch in range(1, opt.epochs + 1):
         start_time = time.time()
 
@@ -245,10 +217,7 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
 
         # ---- Scheduler step ----
         if scheduler is not None:
-            if opt.scheduler == "plateau":
-                scheduler.step(val_result.mean_auc)
-            else:
-                scheduler.step()
+            scheduler.step()
 
         end_time = time.time()
         current_lr = optimizer.param_groups[0]["lr"]
@@ -267,12 +236,15 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
         best_improved, should_stop = early_stopper.check(metric=val_auc, model=model, tiebreak_loss=val_loss)
 
         if best_improved:
+            saved_this_run = True
             print(f"  -> New best model saved! (mAUC: {val_auc:.4f})")
 
         if should_stop:
             print(f"  -> Early stopping triggered at epoch {epoch}.")
             break
 
+    if not saved_this_run:
+        raise RuntimeError("Training did not produce a checkpoint; check the validation data and metrics")
     return save_path
 
 # =============================================================================
@@ -306,14 +278,8 @@ def main():
 
     # === Testing ===
     print("\nStart Testing...")
-    if os.path.exists(best_model_path):
-        if torch.__version__ >= "2.0":
-            model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
-        else:
-            model.load_state_dict(torch.load(best_model_path, map_location=device))
-        print(f"Loaded best model from {best_model_path}")
-    else:
-        print("Warning: Best model file not found! Using current model state.")
+    model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
+    print(f"Loaded the best model trained in this run: {best_model_path}")
 
     test_result = test(
         model, test_loader, device,
@@ -347,7 +313,7 @@ def main():
             f"Config: Seed={opt.seed}, Model={opt.model_name}, N={opt.num_view}, "
             f"BS={opt.batch_size}, LR={opt.lr}, Optim={opt.optim}, "
             f"MD={opt.md_loss}(tau={opt.temp}, lam={opt.lambda_param}), "
-            f"otra={opt.otra_loss}(gamma={opt.otra_weight}, mode={opt.otra_weight_mode})\n"
+            f"otra={opt.otra_loss}(gamma={opt.otra_weight})\n"
         )
         f.write(f"  mAUC : {test_result.mean_auc:.4f}\n")
         f.write(f"  mAP  : {test_result.mean_ap:.4f}\n")
@@ -362,7 +328,6 @@ def main():
 
     print(f"Results saved to {results_path}")
 
-    # save_results_csv(opt, test_result)
     print("All processes finished.")
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ MURA Dataset
 Returns (images[2, C, H, W], target, sample_id) per study view pair.
 
 Input format:
-- 1-channel grayscale, range [0, 1], no ImageNet normalization
-- Each model handles channel expansion internally
+- Grayscale images, resized and normalized with mean/std 0.5
+- The loader expands to three channels when expand_channels=3
 
 Data source:
 - mura_train.csv / mura_valid.csv / mura_test.csv

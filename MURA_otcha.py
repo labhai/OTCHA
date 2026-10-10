@@ -4,10 +4,9 @@ from __future__ import annotations
 import os
 import argparse
 import time
-import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 
 # Dataset (MURA)
 from dataset.mura import MURADataset
@@ -36,44 +35,31 @@ def parse_option():
     # Method & Model
     parser.add_argument("--method", type=str, default="OTCHA", help="method name")
     parser.add_argument("--model_name", type=str, default="vit_small_r26_s32_224", help="timm model name")
-    parser.add_argument("--pretrained_weights", type=str2bool, default=True, help="use timm pretrained weights")
+    parser.add_argument("--pretrained_weights", type=str2bool, default=True, help="initialize the backbone with ImageNet weights")
 
     # fused OT (pos term)
-    parser.add_argument("--num_latents", type=int, default=64, help="num latents M")
-    parser.add_argument("--latent_refine_iters", type=int, default=1, help="latent aggregation iterations")
+    parser.add_argument("--num_latents", type=int, default=49, help="number of latent hub tokens")
     parser.add_argument("--ot_pos_weight", type=float, default=0.2, help="positive geometry weight for fused OT; must be > 0")
     parser.add_argument("--ot_pos_sigma", type=float, default=1.0, help="sigma for Gaussian-like positional score: -d^2/(2*sigma^2)")
 
     # OTCHA params
-    parser.add_argument("--sinkhorn_iters", type=int, default=5, help="sinkhorn iterations")
-    parser.add_argument("--sinkhorn_epsilon", type=float, default=0.1, help="sinkhorn epsilon")
+    parser.add_argument("--sinkhorn_iters", type=int, default=20, help="sinkhorn iterations")
+    parser.add_argument("--sinkhorn_epsilon", type=float, default=0.2, help="sinkhorn epsilon")
     parser.add_argument("--bin_score_init", type=float, default=0.0, help="dustbin logit init")
     parser.add_argument("--normalize_qk", type=str2bool, default=True, help="L2 normalize q/k for cosine scores")
     parser.add_argument("--refine_dropout", type=float, default=0.0, help="dropout on aggregated message")
-    parser.add_argument("--detach_transport", type=str2bool, default=False, help="detach OT matrix P (ablation)")
-    parser.add_argument("--return_transport_matrix", type=str2bool, default=True, help="store P in otcha_info (debug)")
-    parser.add_argument("--num_otcha_stages", type=int, default=0, help="number of mid-layer OTCHA stages (0 disables)")
+    parser.add_argument("--return_transport_matrix", type=str2bool, default=False, help="store P in otcha_info (debug)")
 
     # Loss toggles
     parser.add_argument("--md_loss", type=str2bool, default=True, help="use mutual distillation loss")
-    parser.add_argument("--otra_loss", type=str2bool, default=True, help="use OTCHA rep-kd loss")
+    parser.add_argument("--otra_loss", type=str2bool, default=True, help="use the OTRA representation alignment loss")
 
     # MD hyperparameters
     parser.add_argument("--temp", type=float, default=4.0, help="mutual distillation temperature")
     parser.add_argument("--lambda_param", type=float, default=0.1, help="mutual distillation lambda (inside md_loss)")
 
     # otra hyperparameters
-    parser.add_argument("--otra_weight", type=float, default=0.1, help="gamma: weight for otra loss")
-    parser.add_argument("--otra_student_key", type=str, default="tokens_refined", choices=["tokens", "tokens_refined"], help="student tokens key for otra")
-    parser.add_argument("--otra_weight_mode", type=str, default="gate_beta", choices=["gate_beta", "gate_beta_confv", "confv_beta", "gate", "beta", "uniform"], help="otra weight mode based on otcha_info")
-    parser.add_argument("--otra_detach_teacher", type=str2bool, default=True, help="detach teacher(message) in otra")
-    parser.add_argument("--otra_detach_weights", type=str2bool, default=True, help="detach weights(gate/beta/conf) in otra")
-    parser.add_argument("--otra_feature_norm", type=str, default="layernorm+l2", choices=["layernorm+l2", "l2", "none"], help="feature normalization for otra")
-    parser.add_argument("--otra_distance", type=str, default="cosine", choices=["cosine", "mse", "smooth_l1"], help="distance metric for otra")
-    parser.add_argument("--otra_debug_checks", type=str2bool, default=False, help="enable shape checks in otra")
-    parser.add_argument("--use_stage", type=str2bool, default=False, help="use or not use stage-wise otra Loss")
-    parser.add_argument("--stage_start", type=int, default=0, choices=[0, 1], help="0: include stage0, 1: mid-stages only")
-    parser.add_argument("--stage_weight", type=float, default=1.0, help="stage weight for otra Loss")
+    parser.add_argument("--otra_weight", type=float, default=0.3, help="gamma: weight for otra loss")
 
     # Data paths (MURA)
     parser.add_argument("--data_dir", type=str, default="data/MURA-v1.1", help="MURA data directory")
@@ -83,15 +69,11 @@ def parse_option():
     parser.add_argument("--image_size", type=int, default=224, help="input image size")
     parser.add_argument("--use_clahe", type=str2bool, default=False, help="apply CLAHE")
 
-    # Sampler
-    parser.add_argument("--use_sampler", type=str2bool, default=False, help="use WeightedRandomSampler")
-    parser.add_argument("--sampler_pos_fraction", type=float, default=0.25, help="target positive fraction")
-
     # Training hyperparameters
     parser.add_argument("--batch_size", type=int, default=32, help="batch size")
     parser.add_argument("--num_workers", type=int, default=8, help="num workers")
     parser.add_argument("--epochs", type=int, default=100, help="epochs")
-    parser.add_argument("--patience", type=int, default=10, help="early stopping patience")
+    parser.add_argument("--patience", type=int, default=20, help="early stopping patience")
     parser.add_argument("--grad_clip_norm", type=float, default=80.0, help="grad clip norm")
 
     # AMP
@@ -104,10 +86,8 @@ def parse_option():
     parser.add_argument("--momentum", type=float, default=0.9, help="SGD momentum")
 
     # Scheduler
-    parser.add_argument("--scheduler", type=str, default="cosine", choices=["none", "cosinewarmup", "cosine", "step", "plateau"], help="lr scheduler")
+    parser.add_argument("--scheduler", type=str, default="cosine", choices=["none", "cosine"], help="lr scheduler")
     parser.add_argument("--lr_min", type=float, default=1e-6, help="minimum lr")
-    parser.add_argument("--step_size", type=int, default=20, help="StepLR step size")
-    parser.add_argument("--pl_patience", type=int, default=10, help="plateau patience")
 
     opt = parser.parse_args()
     return opt
@@ -129,28 +109,9 @@ def dataset_loader(opt):
         expand_channels=3, use_clahe=opt.use_clahe,
     )
 
-    # WeightedRandomSampler for class imbalance (optional)
-    if opt.use_sampler:
-        labels = train_dataset.labels
-        n_pos = int((labels == 1).sum())
-        n_neg = int((labels == 0).sum())
-
-        p = float(opt.sampler_pos_fraction)
-        w_pos = p / max(n_pos, 1)
-        w_neg = (1.0 - p) / max(n_neg, 1)
-
-        weights = np.where(labels == 1, w_pos, w_neg)
-        weights = torch.as_tensor(weights, dtype=torch.double)
-
-        sampler = WeightedRandomSampler(weights=weights, num_samples=len(train_dataset), replacement=True)
-        train_shuffle = False
-    else:
-        sampler = None
-        train_shuffle = True
-
     train_loader = DataLoader(
         train_dataset, batch_size=opt.batch_size,
-        sampler=sampler, shuffle=train_shuffle,
+        shuffle=True,
         num_workers=opt.num_workers, pin_memory=True,
     )
     val_loader = DataLoader(
@@ -178,12 +139,10 @@ def set_model_and_losses(opt, device):
         bin_score_init=opt.bin_score_init,
         normalize_qk=opt.normalize_qk,
         refine_dropout=opt.refine_dropout,
-        detach_transport=opt.detach_transport,
         ot_pos_weight=opt.ot_pos_weight,
         ot_pos_sigma=opt.ot_pos_sigma,
         return_otcha_info=True,
         return_transport_matrix=opt.return_transport_matrix,
-        num_otcha_stages=opt.num_otcha_stages,
     ).to(device)
 
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
@@ -194,18 +153,7 @@ def set_model_and_losses(opt, device):
 
     otra_loss = None
     if opt.otra_loss:
-        otra_loss = OTRALoss(
-            student_key=opt.otra_student_key,
-            weight_mode=opt.otra_weight_mode,
-            detach_teacher=opt.otra_detach_teacher,
-            detach_weights=opt.otra_detach_weights,
-            feature_norm=opt.otra_feature_norm,
-            distance=opt.otra_distance,
-            debug_checks=opt.otra_debug_checks,
-            use_otcha_stages=opt.use_stage,
-            stage_start=opt.stage_start,
-            stage_weight_decay=opt.stage_weight,
-        ).to(device)
+        otra_loss = OTRALoss().to(device)
 
     return model, criterion, md_loss, otra_loss
 
@@ -220,15 +168,16 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
         f"{save_dir}/"
         f"{opt.model_name}_seed{opt.seed}_n{opt.num_view}_bs{opt.batch_size}_"
         f"{opt.optim}_lr{opt.lr}_"
-        f"stages{opt.num_otcha_stages}_eps{opt.sinkhorn_epsilon}_"
+        f"eps{opt.sinkhorn_epsilon}_"
         f"M{opt.num_latents}_bin{opt.bin_score_init}_posW{opt.ot_pos_weight}_posS{opt.ot_pos_sigma}_"
         f"md({opt.md_loss})_lam{opt.lambda_param}_"
-        f"otra({opt.otra_loss})_gamma{opt.otra_weight}_{opt.otra_weight_mode}_"
-        f"normqk({opt.normalize_qk})_detP({opt.detach_transport}).pth"
+        f"otra({opt.otra_loss})_gamma{opt.otra_weight}_"
+        f"normqk({opt.normalize_qk}).pth"
     )
 
     early_stopper = EarlyStopper(patience=getattr(opt, "patience", 5), use_loss_when_tie=True, save_path=save_path)
 
+    saved_this_run = False
     for epoch in range(1, opt.epochs + 1):
         start_time = time.time()
 
@@ -238,10 +187,7 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
 
         # scheduler step
         if scheduler is not None:
-            if opt.scheduler == "plateau":
-                scheduler.step(val_result.auc_roc)
-            else:
-                scheduler.step()
+            scheduler.step()
 
         end_time = time.time()
         current_lr = optimizer.param_groups[0]["lr"]
@@ -260,12 +206,15 @@ def train_process(opt, train_loader, val_loader, model, criterion, md_loss, otra
         best_improved, should_stop = early_stopper.check(metric=val_auc, model=model, tiebreak_loss=val_loss)
 
         if best_improved:
+            saved_this_run = True
             print(f"  -> New best model saved! (AUC: {val_auc:.4f})")
 
         if should_stop:
             print(f"  -> Early stopping triggered at epoch {epoch}.")
             break
 
+    if not saved_this_run:
+        raise RuntimeError("Training did not produce a checkpoint; check the validation data and metrics")
     return save_path
 
 def main():
@@ -289,14 +238,8 @@ def main():
 
     # === Testing ===
     print("Start Testing...")
-    if os.path.exists(best_model_path):
-        if torch.__version__ >= "2.0":
-            model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
-        else:
-            model.load_state_dict(torch.load(best_model_path, map_location=device))
-        print(f"Loaded best model from {best_model_path}")
-    else:
-        print("Warning: Best model file not found! Using current model state.")
+    model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
+    print(f"Loaded the best model trained in this run: {best_model_path}")
 
     test_result = test(model, test_loader, device, criterion=criterion, num_classes=opt.num_classes)
 
@@ -321,7 +264,7 @@ def main():
             f"Config: Seed={opt.seed}, Model={opt.model_name}, N={opt.num_view}, "
             f"BS={opt.batch_size}, LR={opt.lr}, Optim={opt.optim}, "
             f"MD={opt.md_loss}(tau={opt.temp}, lam={opt.lambda_param}), "
-            f"otra={opt.otra_loss}(gamma={opt.otra_weight}, mode={opt.otra_weight_mode})\n"
+            f"otra={opt.otra_loss}(gamma={opt.otra_weight})\n"
         )
         f.write(f"  ACC : {test_result.accuracy * 100:.2f}%\n")
         f.write(f"  AUC : {test_result.auc_roc:.4f}\n")

@@ -172,8 +172,6 @@ def _expand_targets_for_views(targets: torch.Tensor, num_views: int) -> torch.Te
 
 
 def _get_otcha_list(output: Dict[str, Any]) -> List[Dict[str, Any]]:
-    if "otcha_stages" in output and isinstance(output["otcha_stages"], list):
-        return output["otcha_stages"]
     if "otcha" not in output:
         return []
     otcha = output["otcha"]
@@ -276,7 +274,7 @@ def train_one_epoch(model: nn.Module, data_loader: DataLoader, criterion: nn.Mod
         loss_rep_sum += float(loss_rep.detach().item()) * B
         num_seen += B
 
-        # --- otcha debug stats: average across stages ---
+        # --- OTCHA confidence statistics ---
         if len(otcha_list) > 0:
             try:
                 beta_vals = [si["beta"].detach().mean().item() for si in otcha_list]

@@ -5,10 +5,14 @@ Prepare them locally according to the formats below and use paths relative to
 `--data_dir` or absolute paths. Keep train/validation/test patient groups disjoint.
 The JSON split keys must be `train`, `val`, and `test`, with nonempty lists.
 
-No metadata-generation recipe here claims to recover the original experimental
-splits. Use the original split files to reproduce those experiments.
+Prepare patient-disjoint splits for your own training. Reproducing the reported
+results requires the same preprocessing, labels, and split assignments as the paper;
+the original split assignments are not bundled.
 
 ## VinDr-Mammo
+
+Official source: [VinDr-Mammo v1.0.0 on PhysioNet](https://physionet.org/content/vindr-mammo/1.0.0/).
+Follow the dataset page's access instructions to obtain the images and annotations.
 
 The loader consumes `breast-level_annotations.csv` with at least these columns:
 
@@ -44,10 +48,14 @@ windowing. Preserve image orientation and identifiers when converting.
 ```
 
 In the object format, `patient_id` refers to the CSV's `study_id`. Include both
-breasts in each split when using four-view or study-level evaluation. A simple
+breasts in each split when using four-view training. A simple
 list of study IDs includes both breasts automatically.
 
 ## CheXpert
+
+Official source: [Stanford CheXpert](https://stanfordmlgroup.github.io/competitions/chexpert/).
+Use its official download link to obtain the images. The paper uses labels from
+[Stanford VisualCheXbert](https://github.com/stanfordmlgroup/VisualCheXbert).
 
 The loader expects a **study-level** `chexpert_label.csv`, rather than a raw
 per-image annotation CSV:
@@ -73,7 +81,7 @@ Pleural Effusion, Pleural Other, Fracture, Support Devices
 ```
 
 The implementation predicts 13 outputs, excludes `No Finding`, and uses U-Zeros:
-only a label value of 1 maps to positive; uncertain, missing, and other values map
+only a label value of 1 maps to positive; uncertain, unannotated, and other values map
 to 0. Prepare study-level labels using the policy selected for your experiment.
 The paper uses VisualCheXbert labels; use the corresponding study-level label
 table when reproducing its results.
@@ -90,6 +98,9 @@ an incomplete pair are skipped.
 one patient in the same split.
 
 ## MURA
+
+Official source: [Stanford MURA](https://stanfordmlgroup.github.io/competitions/mura/).
+Use its official download link to obtain the images and study labels.
 
 Prepare `mura_train.csv`, `mura_valid.csv`, and `mura_test.csv`, each with these columns:
 

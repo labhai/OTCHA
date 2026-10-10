@@ -178,8 +178,6 @@ def _expand_targets_for_views(targets: torch.Tensor, num_views: int) -> torch.Te
 
 
 def _get_otcha_list(output: Dict[str, Any]) -> List[Dict[str, Any]]:
-    if "otcha_stages" in output and isinstance(output["otcha_stages"], list):
-        return output["otcha_stages"]
     if "otcha" not in output:
         return []
     otcha = output["otcha"]
