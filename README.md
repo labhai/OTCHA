@@ -5,9 +5,9 @@
 
 Official PyTorch implementation of **OTCHA: Optimal Transport-driven Confidence-aware Latent Hub Alignment**.
 
-**Paper:** Coming Soon  
+**Paper:** [OTCHA: Optimal Transport-driven Confidence-aware Latent Hub Alignment for Multi-View Medical Image Classification](https://papers.miccai.org/miccai-2026/paper/4914_paper.pdf)
 **Authors:** [Jiwoong Yang](https://scholar.google.com/citations?user=rrsgcvcAAAAJ&hl=ko), [Haejun Chung](https://scholar.google.com/citations?user=O-oZnIwAAAAJ&hl=ko), and [Ikbeom Jang](https://scholar.google.com/citations?user=1rBh9xkAAAAJ&hl=ko)  
-**Conference:** *MICCAI*
+**Conference:** *MICCAI 2026*
 
 <p align="center">
   <img src="./figures/otcha_overview.png" alt="OTCHA Overview" width="85%">
